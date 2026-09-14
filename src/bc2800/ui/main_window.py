@@ -203,6 +203,7 @@ class MainWindow(QMainWindow):
         if self.cfg.autostart:
             autostart.set_enabled(True)
 
+        self._reparse_failed()
         self.refresh_table()
         self._show_latest()
         self._update_pending()
@@ -295,7 +296,7 @@ class MainWindow(QMainWindow):
             return
         stored, inserted = self.repo.insert_exam(exam)
         if inserted:
-            self._try_excel(stored)
+            self._sync_excel(stored)
             _beep()
         self.refresh_table()
         self._show_latest(stored)
@@ -319,6 +320,26 @@ class MainWindow(QMainWindow):
             QSystemTrayIcon.MessageIcon.Information,
             2500,
         )
+
+    def _reparse_failed(self) -> None:
+        updated = self.repo.reparse_failed_exams()
+        for exam in updated:
+            self._sync_excel(exam)
+        if updated:
+            _LOG.info("Reinterpretados %s exame(s) gravados com parse_ok=0", len(updated))
+
+    def _sync_excel(self, exam: Exam) -> None:
+        if exam.db_id is None:
+            return
+        if exam.excel_synced_at is not None:
+            try:
+                if self.excel.fill_exam_row(exam):
+                    return
+            except ExcelLockedError:
+                self.repo.clear_excel_sync(exam.db_id)
+                return
+            self.repo.clear_excel_sync(exam.db_id)
+        self._try_excel(exam)
 
     def _try_excel(self, exam: Exam) -> None:
         if exam.db_id is None:

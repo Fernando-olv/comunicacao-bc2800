@@ -8,6 +8,7 @@ from pathlib import Path
 
 from bc2800.domain.models import Exam, QcEvent
 from bc2800.paths import sqlite_path
+from bc2800.protocol.parser import parse_body
 
 _LOG = logging.getLogger("bc2800.sqlite")
 
@@ -120,6 +121,15 @@ class SqliteRepo:
         ).fetchone()
         if existing:
             stored = self.get_exam(int(existing["id"]))
+            if (
+                stored is not None
+                and not stored.parse_ok
+                and exam.parse_ok
+                and stored.db_id is not None
+            ):
+                self._update_parsed_fields(stored.db_id, exam)
+                refreshed = self.get_exam(stored.db_id)
+                return refreshed or exam, True
             return stored or exam, False
         try:
             cursor = self._conn.execute(
@@ -230,6 +240,69 @@ class SqliteRepo:
         self._conn.commit()
         event.db_id = int(cursor.lastrowid)
         return event, True
+
+    def _update_parsed_fields(self, exam_id: int, exam: Exam) -> None:
+        self._conn.execute(
+            """
+            UPDATE exams SET
+                exam_at = ?, sample_id = ?, sample_mode = ?, animal_type = ?, layout = ?,
+                wbc = ?, lymph_abs = ?, mid_abs = ?, gran_abs = ?,
+                lymph_pct = ?, mid_pct = ?, gran_pct = ?,
+                rbc = ?, hgb = ?, mchc = ?, mcv = ?, mch = ?, rdw = ?, hct = ?,
+                plt = ?, mpv = ?, pdw = ?, pct = ?, parse_ok = ?
+            WHERE id = ?
+            """,
+            (
+                _iso(exam.exam_at),
+                exam.sample_id,
+                exam.sample_mode,
+                exam.animal_type,
+                exam.layout,
+                exam.wbc,
+                exam.lymph_abs,
+                exam.mid_abs,
+                exam.gran_abs,
+                exam.lymph_pct,
+                exam.mid_pct,
+                exam.gran_pct,
+                exam.rbc,
+                exam.hgb,
+                exam.mchc,
+                exam.mcv,
+                exam.mch,
+                exam.rdw,
+                exam.hct,
+                exam.plt,
+                exam.mpv,
+                exam.pdw,
+                exam.pct,
+                int(exam.parse_ok),
+                exam_id,
+            ),
+        )
+        self._conn.commit()
+
+    def reparse_failed_exams(self) -> list[Exam]:
+        rows = self._conn.execute(
+            "SELECT id, raw_payload FROM exams WHERE parse_ok = 0"
+        ).fetchall()
+        updated: list[Exam] = []
+        for row in rows:
+            parsed = parse_body(bytes(row["raw_payload"]))
+            if not isinstance(parsed, Exam) or not parsed.parse_ok:
+                continue
+            self._update_parsed_fields(int(row["id"]), parsed)
+            exam = self.get_exam(int(row["id"]))
+            if exam is not None:
+                updated.append(exam)
+        return updated
+
+    def clear_excel_sync(self, exam_id: int) -> None:
+        self._conn.execute(
+            "UPDATE exams SET excel_synced_at = NULL WHERE id = ?",
+            (exam_id,),
+        )
+        self._conn.commit()
 
     def mark_excel_synced(self, exam_id: int) -> None:
         self._conn.execute(

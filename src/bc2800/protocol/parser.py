@@ -41,11 +41,14 @@ def _to_int(raw: str) -> int | None:
         return None
 
 
-def _to_float(raw: str) -> float | None:
+def _to_float(raw: str, decimals: int = 0) -> float | None:
     if _star(raw):
         return None
+    stripped = raw.strip()
     try:
-        return float(raw.strip())
+        if "." in stripped:
+            return float(stripped)
+        return int(stripped) / (10 ** decimals)
     except ValueError:
         return None
 
@@ -54,6 +57,17 @@ def _to_text(raw: str) -> str | None:
     if _star(raw):
         return None
     return raw.strip()
+
+
+def _gdl(value: float | None) -> float | None:
+    """Cable HGB/MCHC are g/L; the analyzer screen and this app use g/dL."""
+    if value is None:
+        return None
+    return value / 10.0
+
+
+def _decimals(fields: tuple[Field, ...]) -> dict[str, int]:
+    return {item.name: item.decimals for item in fields if item.name}
 
 
 def walk(body: bytes, fields: tuple[Field, ...]) -> dict[str, str] | None:
@@ -71,6 +85,12 @@ def walk(body: bytes, fields: tuple[Field, ...]) -> dict[str, str] | None:
         if item.kind != "skip":
             values[item.name] = raw
     return values
+
+
+def _num(values: dict[str, str], decimals: dict[str, int], name: str) -> float | None:
+    if name not in values:
+        return None
+    return _to_float(values[name], decimals.get(name, 0))
 
 
 def _exam_at(values: dict[str, str]) -> datetime | None:
@@ -104,6 +124,14 @@ def _qc_at(values: dict[str, str], with_time: bool) -> datetime | None:
         return None
 
 
+def _cdh_diff_ok(exam: Exam) -> bool:
+    """Reserved zeros on farm/goat frames look like animal_type 0; DIFF must add up."""
+    parts = (exam.lymph_abs, exam.mid_abs, exam.gran_abs)
+    if exam.wbc is None or any(part is None for part in parts):
+        return True
+    return abs(sum(parts) - exam.wbc) <= 0.2
+
+
 def _try_exam_layout(
     body: bytes,
     layout: str,
@@ -118,7 +146,8 @@ def _try_exam_layout(
     animal_type = _to_int(values.get("animal_type", ""))
     if animal_type not in species:
         return None
-    return Exam(
+    dec = _decimals(fields)
+    exam = Exam(
         raw_payload=body,
         parse_ok=True,
         layout=layout,
@@ -126,25 +155,28 @@ def _try_exam_layout(
         sample_mode=_to_int(values["sample_mode"]),
         exam_at=_exam_at(values),
         animal_type=animal_type,
-        wbc=_to_float(values.get("wbc", "")),
-        lymph_abs=_to_float(values["lymph_abs"]) if "lymph_abs" in values else None,
-        mid_abs=_to_float(values["mid_abs"]) if "mid_abs" in values else None,
-        gran_abs=_to_float(values["gran_abs"]) if "gran_abs" in values else None,
-        lymph_pct=_to_float(values["lymph_pct"]) if "lymph_pct" in values else None,
-        mid_pct=_to_float(values["mid_pct"]) if "mid_pct" in values else None,
-        gran_pct=_to_float(values["gran_pct"]) if "gran_pct" in values else None,
-        rbc=_to_float(values.get("rbc", "")),
-        hgb=_to_float(values.get("hgb", "")),
-        mchc=_to_float(values.get("mchc", "")),
-        mcv=_to_float(values.get("mcv", "")),
-        mch=_to_float(values.get("mch", "")),
-        rdw=_to_float(values.get("rdw", "")),
-        hct=_to_float(values.get("hct", "")),
-        plt=_to_float(values["plt"]) if "plt" in values else None,
-        mpv=_to_float(values["mpv"]) if "mpv" in values else None,
-        pdw=_to_float(values["pdw"]) if "pdw" in values else None,
-        pct=_to_float(values["pct"]) if "pct" in values else None,
+        wbc=_num(values, dec, "wbc"),
+        lymph_abs=_num(values, dec, "lymph_abs"),
+        mid_abs=_num(values, dec, "mid_abs"),
+        gran_abs=_num(values, dec, "gran_abs"),
+        lymph_pct=_num(values, dec, "lymph_pct"),
+        mid_pct=_num(values, dec, "mid_pct"),
+        gran_pct=_num(values, dec, "gran_pct"),
+        rbc=_num(values, dec, "rbc"),
+        hgb=_gdl(_num(values, dec, "hgb")),
+        mchc=_gdl(_num(values, dec, "mchc")),
+        mcv=_num(values, dec, "mcv"),
+        mch=_num(values, dec, "mch"),
+        rdw=_num(values, dec, "rdw"),
+        hct=_num(values, dec, "hct"),
+        plt=_num(values, dec, "plt"),
+        mpv=_num(values, dec, "mpv"),
+        pdw=_num(values, dec, "pdw"),
+        pct=_num(values, dec, "pct"),
     )
+    if layout == "cdh" and not _cdh_diff_ok(exam):
+        return None
+    return exam
 
 
 def parse_exam(body: bytes) -> Exam:
@@ -168,6 +200,7 @@ def parse_qc_b(body: bytes) -> QcEvent:
     values = walk(body, QC_B_FIELDS)
     if values is None or values.get("identifier", "").strip() != "B":
         return QcEvent(raw_payload=body, parse_ok=False, identifier="B")
+    dec = _decimals(QC_B_FIELDS)
     return QcEvent(
         raw_payload=body,
         parse_ok=True,
@@ -175,22 +208,22 @@ def parse_qc_b(body: bytes) -> QcEvent:
         file_no=_to_text(values["file_no"]),
         lot_no=_to_text(values["lot_no"]),
         qc_at=_qc_at(values, with_time=False),
-        wbc=_to_float(values["wbc"]),
-        rbc=_to_float(values["rbc"]),
-        hgb=_to_float(values["hgb"]),
-        plt=_to_float(values["plt"]),
-        hct=_to_float(values["hct"]),
-        mcv=_to_float(values["mcv"]),
-        mch=_to_float(values["mch"]),
-        mchc=_to_float(values["mchc"]),
-        wbc_limit=_to_float(values["wbc_limit"]),
-        rbc_limit=_to_float(values["rbc_limit"]),
-        hgb_limit=_to_float(values["hgb_limit"]),
-        plt_limit=_to_float(values["plt_limit"]),
-        hct_limit=_to_float(values["hct_limit"]),
-        mcv_limit=_to_float(values["mcv_limit"]),
-        mch_limit=_to_float(values["mch_limit"]),
-        mchc_limit=_to_float(values["mchc_limit"]),
+        wbc=_num(values, dec, "wbc"),
+        rbc=_num(values, dec, "rbc"),
+        hgb=_gdl(_num(values, dec, "hgb")),
+        plt=_num(values, dec, "plt"),
+        hct=_num(values, dec, "hct"),
+        mcv=_num(values, dec, "mcv"),
+        mch=_num(values, dec, "mch"),
+        mchc=_gdl(_num(values, dec, "mchc")),
+        wbc_limit=_num(values, dec, "wbc_limit"),
+        rbc_limit=_num(values, dec, "rbc_limit"),
+        hgb_limit=_gdl(_num(values, dec, "hgb_limit")),
+        plt_limit=_num(values, dec, "plt_limit"),
+        hct_limit=_num(values, dec, "hct_limit"),
+        mcv_limit=_num(values, dec, "mcv_limit"),
+        mch_limit=_num(values, dec, "mch_limit"),
+        mchc_limit=_gdl(_num(values, dec, "mchc_limit")),
     )
 
 
@@ -198,19 +231,20 @@ def parse_qc_c(body: bytes) -> QcEvent:
     values = walk(body, QC_C_FIELDS)
     if values is None or values.get("identifier", "").strip() != "C":
         return QcEvent(raw_payload=body, parse_ok=False, identifier="C")
+    dec = _decimals(QC_C_FIELDS)
     return QcEvent(
         raw_payload=body,
         parse_ok=True,
         identifier="C",
         qc_at=_qc_at(values, with_time=True),
-        wbc=_to_float(values["wbc"]),
-        rbc=_to_float(values["rbc"]),
-        hgb=_to_float(values["hgb"]),
-        plt=_to_float(values["plt"]),
-        hct=_to_float(values["hct"]),
-        mcv=_to_float(values["mcv"]),
-        mch=_to_float(values["mch"]),
-        mchc=_to_float(values["mchc"]),
+        wbc=_num(values, dec, "wbc"),
+        rbc=_num(values, dec, "rbc"),
+        hgb=_gdl(_num(values, dec, "hgb")),
+        plt=_num(values, dec, "plt"),
+        hct=_num(values, dec, "hct"),
+        mcv=_num(values, dec, "mcv"),
+        mch=_num(values, dec, "mch"),
+        mchc=_gdl(_num(values, dec, "mchc")),
     )
 
 

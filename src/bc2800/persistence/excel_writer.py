@@ -30,8 +30,8 @@ HEADERS = [
     "Mid% (%)",
     "Gran% (%)",
     "RBC (10^12/L)",
-    "HGB (g/L)",
-    "MCHC (g/L)",
+    "HGB (g/dL)",
+    "MCHC (g/dL)",
     "MCV (fL)",
     "MCH (pg)",
     "RDW (%)",
@@ -47,10 +47,22 @@ HEADERS = [
 
 COL_ID = 3
 COL_EXAM_AT = 2
+COL_RECEIVED = 1
 COL_SPECIES = 4
 COL_NAME = 24
 COL_TUTOR = 25
 COL_NOTES = 26
+
+
+def _rename_unit_headers(sheet: Worksheet) -> bool:
+    changed = False
+    if sheet.cell(1, 14).value == "HGB (g/L)":
+        sheet.cell(1, 14).value = "HGB (g/dL)"
+        changed = True
+    if sheet.cell(1, 15).value == "MCHC (g/L)":
+        sheet.cell(1, 15).value = "MCHC (g/dL)"
+        changed = True
+    return changed
 
 
 def _header_fill() -> PatternFill:
@@ -62,7 +74,10 @@ def _ensure_workbook(path: Path) -> Worksheet:
     if path.exists():
         book = load_workbook(path)
         if SHEET in book.sheetnames:
-            return book[SHEET]
+            sheet = book[SHEET]
+            if _rename_unit_headers(sheet):
+                book.save(path)
+            return sheet
         sheet = book.create_sheet(SHEET)
         _write_headers(sheet)
         book.save(path)
@@ -148,6 +163,7 @@ class ExcelWriter:
             sheet = book[SHEET] if SHEET in book.sheetnames else book.create_sheet(SHEET)
             if sheet.max_row == 1 and sheet.cell(1, 1).value is None:
                 _write_headers(sheet)
+            _rename_unit_headers(sheet)
             row_values = exam_row(exam)
             sheet.append(row_values)
             row_idx = sheet.max_row
@@ -157,6 +173,44 @@ class ExcelWriter:
             last = get_column_letter(len(HEADERS))
             sheet.auto_filter.ref = f"A1:{last}{sheet.max_row}"
             book.save(self.path)
+        except PermissionError as exc:
+            raise ExcelLockedError(str(self.path)) from exc
+
+    def _find_row(self, sheet: Worksheet, exam: Exam) -> int | None:
+        exam_label = format_exam_at(exam.exam_at)
+        species = species_name(exam.animal_type)
+        received = exam.received_at.strftime("%d/%m/%Y %H:%M:%S")
+        received_match: int | None = None
+        for row in range(2, sheet.max_row + 1):
+            id_ok = str(sheet.cell(row, COL_ID).value or "") == (exam.sample_id or "")
+            at_ok = str(sheet.cell(row, COL_EXAM_AT).value or "") == exam_label
+            sp_ok = str(sheet.cell(row, COL_SPECIES).value or "") == species
+            if exam.sample_id and id_ok and at_ok and sp_ok:
+                return row
+            if str(sheet.cell(row, COL_RECEIVED).value or "") == received:
+                received_match = row
+        return received_match
+
+    def fill_exam_row(self, exam: Exam) -> bool:
+        if not self.path.exists():
+            return False
+        try:
+            book = load_workbook(self.path)
+            if SHEET not in book.sheetnames:
+                return False
+            sheet = book[SHEET]
+            _rename_unit_headers(sheet)
+            target = self._find_row(sheet, exam)
+            if target is None:
+                book.save(self.path)
+                return False
+            for col, value in enumerate(exam_row(exam), start=1):
+                sheet.cell(target, col, value)
+            id_cell = sheet.cell(target, COL_ID)
+            id_cell.number_format = "@"
+            id_cell.value = exam.sample_id
+            book.save(self.path)
+            return True
         except PermissionError as exc:
             raise ExcelLockedError(str(self.path)) from exc
 

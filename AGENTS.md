@@ -16,7 +16,7 @@ Entry point: `python -m bc2800` → `bc2800.app:main`. Frozen exe: `dist/BC2800 
 - Excel **only appends new exam rows**. Never rewrite the whole workbook (the user edits Nome/Tutor/Observações in Excel).
 - QC frames (`B` / `C`) go to SQLite only. No QC sheet in Excel. GUI only shows a “QC recebido” notice.
 - Histogram WBC/RBC/PLT (256 channels × 3 ASCII digits × 3 series = **2304 bytes**) is **consumed and discarded**. Do not persist bins or draw charts unless asked.
-- Units stay as the analyzer sends them (`g/L`, `10^9/L`, …). No g/dL conversion.
+- HGB and MCHC arrive as **g/L** on the cable (`###` / `####`) and are stored/shown as **g/dL** (`/10`) to match the analyzer printout. Other units stay as sent (`10^9/L`, fL, …).
 - Species names are **fixed** in `domain/species.py` (Cão, Gato, Cavalo, Suíno, Bovino, Búfalo, Caprino, Animal 1–4). Animal 1–4 are not user-renamable.
 - Closing the main window hides to the **system tray**. Only tray **Sair** quits. Autostart via `HKCU\...\Run` is on by default.
 - Identifier `"A"` is **not one layout**. Dispatch by trying `cdh` / `farm` / `goat` and validating `animal_type` against disjoint sets.
@@ -46,6 +46,7 @@ src/bc2800/
   ui/                      # PySide6 window, tray, settings, autostart
 tests/
   frames.py                # synthetic packers used by tests
+  fixtures/                # live analyzer dumps
   test_protocol.py
   test_persistence.py
 packaging/bc2800.spec
@@ -56,7 +57,7 @@ Runtime files (gitignored): `data/` (sqlite, xlsx, config, lock, backups), `logs
 
 ## Protocol (must stay aligned with `coms_info.txt`)
 
-Source of truth for field order/width: [`coms_info.txt`](coms_info.txt). Human BC-2800 manuals are similar but **not** identical (Vet ID width and animal-type forks differ).
+Source of truth for field **order** is [`coms_info.txt`](coms_info.txt). **Widths on the wire** are calibrated in [`src/bc2800/protocol/layouts.py`](src/bc2800/protocol/layouts.py) from a live BC-2800Vet dump (2026-09-14). Human BC-2800 manuals are similar but **not** identical (Vet ID width and animal-type forks differ). The appendix writes `###.#` as the display format; this firmware **omits the ASCII decimal point** and shrinks each dotted field by one. `Field.decimals` is the implied fraction (`0274` + decimals=1 → 27.4).
 
 ### Serial / envelope
 
@@ -75,17 +76,21 @@ Do not put control bytes in synthetic bodies. Histogram padding in tests is ASCI
 
 ### Exam identifier `"A"` — three layouts
 
-`AnimalType` is **not** at a fixed offset. `parse_exam()` tries all three maps; species sets are disjoint.
+`parse_exam()` tries all three maps; species sets are disjoint. `cdh` also requires Lymph#+Mid#+Gran# to equal WBC when all three are present (reserved zeros on goat/farm frames otherwise look like Cão).
 
 | Layout | Species | ID width | DIFF (Lymph/Mid/Gran) | PLT/MPV/PDW/PCT | `animal_type` width | Prefix length |
 |---|---|---|---|---|---|---|
-| `cdh` | 0 Cão, 1 Gato, 2 Cavalo | 6 | yes | yes | 2 | **153** |
+| `cdh` | 0 Cão, 1 Gato, 2 Cavalo | **8** | yes (digit-only) | yes | 2 | **149** |
 | `farm` | 3 Suíno, 4 Bovino, 5 Búfalo, 7–10 Animal 1–4 | 8 | no (reserved 16+5) | yes | 2 | **149** |
-| `goat` | 6 Caprino | 8 | no | **no** (reserved 13+15) | **1** | **149** |
+| `goat` | 6 Caprino | 8 | no | **no** (reserved 13+15) | **1** | **152** |
 
-Trailing histograms: ignore extra bytes after the prefix (`HISTO_BYTES = 2304` when present). Prefix-only bodies are valid.
+Live CDH extras vs the appendix: RDW is `##.#` (3 digits), then **10 unknown bytes** after PCT (`****027000` on the first dog dump), then reserved 11 + animal_type + L-regions. Histogram starts at offset 149 (`HISTO_BYTES = 2304`).
 
-Numeric fields: only digits, space, `.`, `*` are plausible (`parser._plausible`). **Do not** run that check on `text` fields (`A`/`B`/`C`, lot numbers).
+Trailing histograms: ignore extra bytes after the prefix. Prefix-only bodies are valid.
+
+Numeric fields: only digits, space, `.`, `*` are plausible (`parser._plausible`). Digit-only fields use `int(raw) / 10**decimals`. If an ASCII `.` is present (QC test packers), `float(raw)` is used. **Do not** run the plausible check on `text` fields (`A`/`B`/`C`, lot numbers).
+
+HGB/MCHC: parse as g/L then divide by 10 for g/dL (printout 13.5 ↔ cable `135`).
 
 If no layout matches: `Exam(parse_ok=False, layout="unknown")` still persisted with `raw_payload`.
 
@@ -94,12 +99,17 @@ If no layout matches: `Exam(parse_ok=False, layout="unknown")` still persisted w
 - `B` Standard L-J: prefix length **114**. `File No.` is treated as **1 byte** (`coms_info.txt` writes `File No. "B"`, likely a transcription error vs human `#`). Confirm on first live QC dump.
 - `C` Run L-J: prefix length **62**. No lot / limits.
 
-### Live calibration (first real analyzer)
+### Live calibration (2026-09-14 dog dump)
+
+Confirmed against the analyzer printout: WBC 27.4, RBC 5.82, HGB 13.5 g/dL, HCT 42.2, RDW 14.6, PLT 430. Fixture: `tests/fixtures/20260914-101927-917617-A.bin` (2453 bytes = 149 + 2304).
 
 1. Leave logging on; inspect `logs/*.hex`.
 2. If ASCII is garbage, try **8N1** (or parity Odd/Even) in Settings to match the unit.
 3. Confirm histogram skip and QC B file_no width against a real frame.
-4. Adjust **only** `protocol/layouts.py` field lists, then add a fixture in `tests/frames.py`.
+4. Adjust **only** `protocol/layouts.py` field lists, then add a fixture in `tests/frames.py` / `tests/fixtures/`.
+5. Farm/goat extra skip-10 after the platelet region is best-effort until a live non-dog dump exists.
+
+On startup, `SqliteRepo.reparse_failed_exams()` re-parses `parse_ok=0` rows from `raw_payload` so a firmware-map fix fills the already-stored sample without a retransmission.
 
 ## Data flow
 
@@ -152,7 +162,7 @@ Analyzer-side setup to tell the operator: Handshake On, Auto transmit On, baud/p
 
 ## Out of scope unless the user asks
 
-- Histogram charts, QC Excel sheet, pre-exam animal registry, HGB g/dL, custom names for Animal 1–4, clinic LIS integration, non-Windows ports as a product target.
+- Histogram charts, QC Excel sheet, pre-exam animal registry, custom names for Animal 1–4, clinic LIS integration, non-Windows ports as a product target.
 
 ## Pointers
 
