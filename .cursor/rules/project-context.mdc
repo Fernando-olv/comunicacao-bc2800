@@ -1,0 +1,15 @@
+---
+description: Core context for the BC-2800Vet receptor — read AGENTS.md first
+alwaysApply: true
+---
+
+# BC-2800Vet receptor
+
+Before changing this repo, read [AGENTS.md](../../AGENTS.md) and [coms_info.txt](../../coms_info.txt).
+
+- Desktop Windows app (PySide6 + pyserial). Not a web app. UI language is pt-BR.
+- SQLite is source of truth; Excel is append-only for exams. Never rewrite the whole xlsx. QC (B/C) is SQLite only.
+- Exam identifier `A` has three layouts (`cdh` / `farm` / `goat`) in `protocol/layouts.py`. Do not parse with one struct or regex. Histograms are skipped, not stored.
+- Serial package is `serial_io` (name `serial` clashes with pyserial).
+- After protocol or persistence changes, update `tests/frames.py` and run `python -m pytest tests -q`.
+- Do not commit `data/`, `logs/`, `.venv/`, `dist/`, or `build/`.

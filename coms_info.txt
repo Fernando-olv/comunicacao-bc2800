@@ -1,0 +1,333 @@
+Communication
+
+D.1 Introduction
+
+The BC-2800Vet can transmit the sample data and QC data to an external computer (a host)
+through its RS-232 serial port. The transmission can be conducted either automatically or
+through the command of the operator after the completion of the sample analysis. This
+section gives detailed discussion about the setup of transmission parameter, RS-232 serial
+port and the data transmission format, therefore, providing detailed information for the
+software engineers to program and for the user to conveniently perform transmission.
+
+D.2 Connection
+
+The BC-2800Vet can be connected with an external computer through a DB9 connector. The
+pins of the DB9 connector are shown in Figure D-1.
+
+
+Figure D-1 DB9 connecter
+
+Pin description:
+1. DCD: Carrier Detect
+2. RXD: Receive Data
+3. TXD: Transmit Data
+4. DTR: Data Terminal Ready
+5. GND: Signal Ground
+6. DSR: Data Set Ready
+7. RTS: Request to Send
+8. CTS: Clear to Send
+9. RI: Ring Indicator
+
+The BC-2800Vet communicates with a host through serial port 2, using Pin2, Pin 3 and Pin 5.
+The maximum transmission distance is 12 meters.
+
+D.3 Transmission Data Format
+
+D.3.1 Description
+
+Symbols
+
+[ENQ] 0x05
+[STX] 0x02
+[EOT] 0x04
+[EOF] 0x1A
+[ETX] 0x03
+[ACK] 0x06
+[NACK] 0x15
+"A" 0x41
+"B" 0x42
+"C" 0x43
+"#" 0x30-0x39
+"*" 0x2A
+
+If the Lot No., Month, Day, Year are empty in QC Edit menu, the "*" (2A Hex) will be
+transmitted to the host.
+
+For all the data formats, if the data are marked "*", then "*" (2A Hex) will be transmitted to the
+host.
+
+# Programming
+
+If the Handshake is off, the BC-2800Vet will transmit the body of the text without
+acknowledging the presence of an external computer.
+
+If the Handshake is on, the BC-2800Vet will communicate with the external computer in
+following procedures:
+
+1. The BC-2800Vet sends an ENQ (05 Hex), then waits up to 4 seconds for the external
+computer to respond. If the external computer does not respond, then one more ENQ (05
+Hex) is tried. If it fails again, the analyzer aborts the transmission and reports a
+transmission error;
+
+2. The external computer must respond by sending an ACK (06 Hex). If any other response
+is received, another ENQ (05 Hex) will be sent by the analyzer (a maximum of two ENQ
+[05 Hex] will be sent);
+
+3. The analyzer then sends:
+
+Body of text
+EOT (04 Hex)
+ETX (03 Hex)
+
+4. Disconnection.
+
+The BC-2800Vet sends an ETX (03 Hex), then waits 4 seconds for the external computer
+to respond. If no response is received, one more ETX ( 03 Hex) is sent, the BC-2800Vet
+waits 4 seconds before giving up and gives alarm of communication error.
+
+If the external compute responds ACK, the transmission is done successfully. If the external
+computer responds NACK (15 Hex) , the analyzer repeat the transmission from step 3. If the
+received response from the computer is neither ACK (06 Hex) nor NACK (15 Hex) , the
+analyzer sends ETX ( 03 Hex) again.
+
+Animal Types
+0. Dog
+1. Cat
+2. Horse
+3. Pig
+4. Cow
+5. Buffalo
+6. Goat
+7. Animal1
+8. Animal2
+9. Animal3
+10. Animal4
+
+For Cat, Dog and Horse
+
+If handshake is enabled [ENQ]
+If handshake is disabled [STX]
+Body of the text start
+
+Text Identifier "A"
+ID ######
+
+Sample Mode #
+Month ##
+Day ##
+Year ####
+
+Hour ##
+
+Minutes ##
+WBC[109/L] ###.#
+Lymph#[109/L] ###.#
+Mid#[109/L] ###.#
+Gran#[10°/L] ###.#
+Lymph%[%] ##.#
+Mid%[%] ##.#
+Gran%[%] ##.#
+RBC[1012/L] ##.##
+HGB[g/L] ###
+MCHC[g/L] ####
+MCV[fL] ###.#
+
+MCH [pg] ###.#
+RDW [%] ##.##
+HCT[%] ##.#
+PLT[109/L] ####
+MPVĮfL] ##.#
+PDW ##.#
+PCT[%] .###
+Reserved ###########
+AnimalType ##
+Reserved #
+L1 Region ###
+L2 Region ###
+L3 Region ###
+L4 Region ###
+L5 Region ###
+L6 Region ###
+L7 Region ###
+L8 Region ###
+Reserved ################
+WBC Histo (256 channels)
+RBC Histo (256 channels)
+PLT Histo (256 channels)
+Body of the text end
+
+If handshake is enabled [EOT]
+If handshake is disabled [EOF]
+If handshake is enabled [ETX]
+
+For Pig, Cow, Buffalo and User-defined
+
+If handshake is enabled [ENQ]
+If handshake is disabled [STX]
+Body of the text start
+
+Text Identifier "A"
+
+ID ########
+
+Sample Mode #
+Month ##
+Day ##
+Year ####
+
+Hour ##
+
+Minutes ##
+WBC[109/L] ###.#
+Reserved ################
+Reserved #####
+RBC[1012/L] ##.##
+HGB[g/L] ###
+
+MCHC[g/L] ####
+MCV[fL] ###.#
+MCH [pg] ###.#
+RDW [%] ##.##
+HCT[%] ##.#
+PLT[109/L] ####
+MPV[fL] ##.#
+PDW ##.#
+PCT[%] .###
+Reserved ###########
+AnimalType ##
+Reserved #
+L1 Region ###
+Reserved ######
+L4 Region ###
+L5 Region ###
+L6 Region ###
+L7 Region ###
+L8 Region ###
+Reserved ################
+
+WBC Histo (256 channels) ###
+RBC Histo (256 channels) ###
+PLT Histo (256 channels) ###
+
+Body of the text end 
+If handshake is enabled [EOT]
+If handshake is disabled [EOF]
+If handshake is enabled [ETX]
+
+
+For Goat
+
+If handshake is enabled [ENQ]
+If handshake is disabled [STX]
+Body of the text start
+
+Text Identifier "A"
+
+ID ########
+
+Sample Mode #
+Month ##
+Day ##
+Year ####
+
+Hour ##
+
+Minutes ##
+WBC[109/L] ###.#
+Reserved ################
+Reserved #####
+RBC[1012/L] ##.##
+HGB[g/L] ###
+
+MCHC[g/L] ####
+MCV[fL] ###.#
+MCH [pg] ###.#
+RDW [%] ##.##
+HCT[%] ##.#
+Reserved #############
+Reserved ###############
+AnimalType #
+Reserved #
+L1 Region ###
+Reserved ######
+L4 Region ###
+L5 Region ###
+L6 Region ###
+L7 Region ###
+L8 Region ###
+Reserved ################
+
+WBC Histo (256 channels) ###
+RBC Histo (256 channels) ###
+PLT Histo (256 channels) ###
+
+Body of the text end 
+If handshake is enabled [EOT]
+If handshake is disabled [EOF]
+If handshake is enabled [ETX]
+
+Standard L-J QC Data Format
+
+
+If handshake is enabled [ENQ]
+If handshake is disabled [STX]
+Body of the text start
+
+Text Identifier "B"
+File No. "B"
+Lot No. ######
+Month ##
+Day ##
+Year ####
+
+WBC[109/L] ###.#
+RBC[1012/L] ##.##
+HGB[g/L] ###
+PLT[109/L] ####
+Reserved ##############
+HCT[%] ##.#
+MCV[fL] ###.#
+MCH[pg] ###.#
+MCHC[g/L] ####
+WBC Limit[109/L] ###.#
+RBC Limit[1012/L] ##.##
+HGB Limit[g/L] ###
+PLT Limit[109/L] ####
+Reserved ##############
+HCT Limit[%] ##.#
+MCV Limit[fL] ###.#
+MCH Limit[pg] ###.#
+MCHC Limit[g/L] ####
+Body of the text end
+If handshake is enabled [EOT]
+If handshake is disabled [EOF]
+If handshake is enabled [ETX]
+
+Run L-J QC Data Format
+
+If handshake is enabled [ENQ]
+If handshake is disabled [STX]
+Body of the text start
+
+Text Identifier "C"
+
+Month ##
+Day ##
+Year ####
+Hour ##
+Minutes ##
+WBC[109/L] ###.#
+RBC[1012/L] ##.##
+HGB[g/L] ###
+PLT[109/L] ####
+Reserved ##############
+HCT[%] ##.#
+MCV[fL] ###.#
+MCH[pg] ###.#
+MCHC[g/L] ####
+Body of the text end
+If handshake is enabled [EOT]
+If handshake is disabled [EOF]
+If handshake is enabled [ETX]
+
+

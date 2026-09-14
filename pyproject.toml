@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bc2800-receptor"
+version = "1.0.0"
+description = "Receptor serial da Mindray BC-2800Vet (SQLite + Excel)"
+requires-python = ">=3.12"
+dependencies = [
+    "pyserial>=3.5",
+    "PySide6>=6.7",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pyinstaller>=6.0"]
+
+[project.scripts]
+bc2800 = "bc2800.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]
