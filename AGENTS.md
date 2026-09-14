@@ -103,7 +103,7 @@ If no layout matches: `Exam(parse_ok=False, layout="unknown")` still persisted w
 
 Confirmed against the analyzer printout: WBC 27.4, RBC 5.82, HGB 13.5 g/dL, HCT 42.2, RDW 14.6, PLT 430. Fixture: `tests/fixtures/20260914-101927-917617-A.bin` (2453 bytes = 149 + 2304).
 
-1. Leave logging on; inspect `logs/*.hex`.
+1. Leave logging on; inspect `logs/*.hex` (and `tests/fixtures/*.bin`) in Cursor with the **Hex** plugin — `.cursor/settings.json` turns it on for this repo so offsets/widths are easier to match against `protocol/layouts.py`.
 2. If ASCII is garbage, try **8N1** (or parity Odd/Even) in Settings to match the unit.
 3. Confirm histogram skip and QC B file_no width against a real frame.
 4. Adjust **only** `protocol/layouts.py` field lists, then add a fixture in `tests/frames.py` / `tests/fixtures/`.
@@ -169,3 +169,4 @@ Analyzer-side setup to tell the operator: Handshake On, Auto transmit On, baud/p
 - Field widths: `coms_info.txt` + `src/bc2800/protocol/layouts.py`
 - Operator-facing how-to: `README.md`
 - Cursor always-on rule: `.cursor/rules/project-context.mdc`
+- Hex dumps: keep the Cursor **Hex** plugin enabled (`.cursor/settings.json`) when calibrating live frames.

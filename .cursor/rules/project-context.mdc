@@ -12,4 +12,5 @@ Before changing this repo, read [AGENTS.md](../../AGENTS.md) and [coms_info.txt]
 - Exam identifier `A` has three layouts (`cdh` / `farm` / `goat`) in `protocol/layouts.py`. Do not parse with one struct or regex. Histograms are skipped, not stored.
 - Serial package is `serial_io` (name `serial` clashes with pyserial).
 - After protocol or persistence changes, update `tests/frames.py` and run `python -m pytest tests -q`.
+- Use the Cursor Hex plugin (enabled in `.cursor/settings.json`) to inspect `logs/*.hex` and `tests/fixtures/*.bin` when debugging protocol offsets.
 - Do not commit `data/`, `logs/`, `.venv/`, `dist/`, or `build/`.
